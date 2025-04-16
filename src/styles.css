@@ -1,1 +1,6 @@
-/* You can add global styles to this file, and also import other style files */
+@font-face {
+    font-family: Hero;
+    src: url(./assets/fonts/ofont.ru_Hero.ttf);
+    font-family: HeroBold;
+    src: url(./assets/fonts/ofont.ru_Hero_Bold.ttf);
+}

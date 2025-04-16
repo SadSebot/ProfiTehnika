@@ -1,0 +1,210 @@
+        :root {
+            --primary-color: #eecd8a;
+            --secondary-color: #333;
+            --accent-color: #ff6b00;
+            --text-color: #000000;
+            --light-bg: rgba(245, 245, 245, 0.95);
+            --shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        .main-container {
+            font-family: 'HeroBold', sans-serif;
+            color: #000000;
+            overflow-x: hidden;
+            background-color: #f9f9f9;
+        }
+        /* Masters Section */
+        .masters-hero {
+            background: linear-gradient(rgba(0, 0, 0, 0.5) center/cover no-repeat);
+            height: 400px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            color: rgb(0, 0, 0);
+        }
+
+        .masters-title {
+            margin-top: 40px;
+            font-size: 3rem;
+            margin-bottom: 20px;
+        }
+
+        .masters-subtitle {
+            font-size: 1.5rem;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .masters-container {
+            max-width: 1200px;
+            margin: 80px auto;
+            padding: 0 20px;
+        }
+
+        .section-title {
+            text-align: center;
+            font-size: 2.5rem;
+            margin-bottom: 60px;
+            position: relative;
+        }
+
+        .section-title::after {
+            content: '';
+            position: absolute;
+            bottom: -15px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 100px;
+            height: 3px;
+            background-color: #ff6b00;
+        }
+
+        .masters-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 40px;
+        }
+
+        .master-card {
+            background: white;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s;
+        }
+
+        .master-card:hover {
+            transform: translateY(-10px);
+        }
+
+        .master-photo {
+            width: 100%;
+            height: 300px;
+            object-fit: cover;
+        }
+
+        .master-info {
+            padding: 25px;
+        }
+
+        .master-name {
+            font-size: 1.8rem;
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .master-specialty {
+            color: #ff6b00;
+            font-size: 1.2rem;
+            margin-bottom: 15px;
+            display: block;
+        }
+
+        .master-experience {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+            color: #666;
+        }
+
+        .master-experience i {
+            margin-right: 10px;
+            color: #ff6b00;
+        }
+
+        .master-skills {
+            margin-top: 20px;
+        }
+
+        .skills-title {
+            font-size: 1.1rem;
+            margin-bottom: 10px;
+        }
+
+        .skills-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .skill-tag {
+            background-color: #eecd8a;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+        }
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .masters-hero {
+                height: 350px;
+            }
+            
+            .masters-title {
+                font-size: 2.5rem;
+            }
+            
+            .masters-subtitle {
+                font-size: 1.2rem;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .nav-container {
+                flex-direction: column;
+            }
+            
+            .logo {
+                margin-bottom: 15px;
+            }
+            
+            .nav-menu {
+                width: 100%;
+                justify-content: space-around;
+            }
+            
+            .nav-item {
+                margin-left: 0;
+            }
+            
+            .masters-hero {
+                height: 300px;
+                padding: 0 20px;
+            }
+            
+            .masters-title {
+                font-size: 2rem;
+            }
+            
+            .section-title {
+                font-size: 2rem;
+            }
+            
+            .master-name {
+                font-size: 1.5rem;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .masters-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+            .nav-menu {
+                flex-direction: column;
+                align-items: center;
+            }
+            
+            .nav-item {
+                margin: 10px 0;
+            }
+            
+            .masters-hero {
+                height: 250px;
+            }
