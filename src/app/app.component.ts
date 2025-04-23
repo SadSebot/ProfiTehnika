@@ -5,12 +5,13 @@ import { FooterComponent } from './footer/footer.component';
 import { ChildrenOutletContexts } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
+import { HttpClientModule } from '@angular/common/http';
 
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterModule, RouterOutlet, HeaderComponent, FooterComponent, FormsModule, CommonModule],
+  imports: [RouterModule, RouterOutlet, HeaderComponent, FooterComponent, FormsModule, CommonModule, HttpClientModule],
   templateUrl: './app.component.html',
   styleUrl: './app.component.css',
 })
