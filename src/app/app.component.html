@@ -12,28 +12,63 @@
     <button class="close-btn" (click)="closeModal()">
       <i class="fas fa-times"></i>
     </button>
-    
-    <h2>Оставить заявку</h2>
-    
-    <form class="feedback-form" (ngSubmit)="submitForm()">
+    <form class="feedback-form" (ngSubmit)="submitForm()" #requestForm="ngForm">
       <div class="form-group">
         <label for="name">Ваше имя*</label>
-        <input type="text" id="name" [(ngModel)]="formData.name" name="name" required>
+        <input 
+          type="text" 
+          id="name" 
+          [(ngModel)]="formData.name" 
+          name="name" 
+          required
+          [class.invalid]="errorMessage && !formData.name"
+        >
       </div>
       
       <div class="form-group">
         <label for="phone">Телефон*</label>
-        <input type="tel" id="phone" [(ngModel)]="formData.phone" name="phone" required>
+        <input 
+          type="tel" 
+          id="phone" 
+          [(ngModel)]="formData.phone" 
+          name="phone" 
+          required
+          [class.invalid]="errorMessage && !formData.phone"
+        >
       </div>
-      
       <div class="form-group">
         <label for="message">Сообщение</label>
-        <textarea id="message" rows="4" [(ngModel)]="formData.message" name="message"></textarea>
+        <textarea 
+          id="message" 
+          rows="4" 
+          [(ngModel)]="formData.message" 
+          name="message"
+        ></textarea>
       </div>
       
-      <button type="submit" class="submit-btn">
-        Отправить заявку
+      <div class="form-notifications">
+        <div class="error-message" *ngIf="errorMessage">
+          <i class="fas fa-exclamation-circle"></i> {{ errorMessage }}
+        </div>
+        <div class="success-message" *ngIf="successMessage">
+          <i class="fas fa-check-circle"></i> {{ successMessage }}
+        </div>
+      </div>
+      
+      <button 
+        type="submit" 
+        class="submit-btn" 
+        [disabled]="isLoading"
+      >
+        <span *ngIf="!isLoading">Отправить заявку</span>
+        <span *ngIf="isLoading">
+          <i class="fas fa-spinner fa-spin"></i> Отправка...
+        </span>
       </button>
+      
+      <div class="form-footer">
+        <p style="font-family: HeroBold;">* Поля обязательные для заполнения</p>
+      </div>
     </form>
   </div>
 </div>
