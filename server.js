@@ -204,29 +204,46 @@ app.put('/api/requests/:id', authenticateTelegramRequest, async (req, res) => {
 // Статистика
 app.get('/api/requests/stats', authenticateTelegramRequest, async (req, res) => {
   try {
-    const { user_id } = req.query;
-    
-    let query = `SELECT 
-      SUM(status = 'new') AS new,
-      SUM(status = 'in_progress') AS in_progress,
-      SUM(status = 'completed') AS completed
-    FROM requests`;
-    
-    const params = [];
-    
-    if (user_id) {
-      query += ' WHERE user_id = ?';
-      params.push(user_id);
-    }
-    
-    const [rows] = await pool.query(query, params);
-    res.json(rows[0]);
+      const { user_id } = req.query;
+      
+      let query = `
+          SELECT 
+              COALESCE(SUM(status = 'new'), 0) AS new,
+              COALESCE(SUM(status = 'in_progress'), 0) AS in_progress,
+              COALESCE(SUM(status = 'completed'), 0) AS completed,
+              COUNT(*) AS total
+          FROM requests
+      `;
+      
+      const params = [];
+      
+      if (user_id) {
+          query += ' WHERE user_id = ?';
+          params.push(user_id);
+      }
+      
+      const [rows] = await pool.query(query, params);
+      
+      // Гарантируем возврат всех полей даже при ошибках
+      const result = rows[0] || {
+          new: 0,
+          in_progress: 0,
+          completed: 0,
+          total: 0
+      };
+      
+      res.json(result);
+      
   } catch (err) {
-    console.error('Stats error:', err);
-    res.status(500).json({ 
-      error: 'Statistics operation failed',
-      details: process.env.NODE_ENV === 'production' ? undefined : err.message
-    });
+      console.error('Stats error:', err);
+      
+      // Возвращаем нулевые значения при ошибке
+      res.json({
+          new: 0,
+          in_progress: 0,
+          completed: 0,
+          total: 0
+      });
   }
 });
 
