@@ -113,6 +113,17 @@ function authenticateTelegramRequest(req, res, next) {
 app.get('/api/requests', authenticateTelegramRequest, async (req, res) => {
   try {
     const { status, user_id } = req.query;
+    
+    // Проверяем существование столбца status
+    const [columns] = await pool.query(`
+      SELECT COLUMN_NAME 
+      FROM INFORMATION_SCHEMA.COLUMNS 
+      WHERE TABLE_NAME = 'requests' 
+      AND COLUMN_NAME = 'status'
+    `);
+    
+    const hasStatusColumn = columns.length > 0;
+    
     let query = 'SELECT * FROM requests';
     const params = [];
     const conditions = [];
@@ -122,7 +133,8 @@ app.get('/api/requests', authenticateTelegramRequest, async (req, res) => {
       params.push(user_id);
     }
     
-    if (status && status !== 'all') {
+    // Добавляем условие по статусу только если столбец существует
+    if (hasStatusColumn && status && status !== 'all') {
       conditions.push('status = ?');
       params.push(status);
     }
@@ -204,46 +216,51 @@ app.put('/api/requests/:id', authenticateTelegramRequest, async (req, res) => {
 // Статистика
 app.get('/api/requests/stats', authenticateTelegramRequest, async (req, res) => {
   try {
-      const { user_id } = req.query;
-      
-      let query = `
-          SELECT 
-              COALESCE(SUM(status = 'new'), 0) AS new,
-              COALESCE(SUM(status = 'in_progress'), 0) AS in_progress,
-              COALESCE(SUM(status = 'completed'), 0) AS completed,
-              COUNT(*) AS total
-          FROM requests
+    const { user_id } = req.query;
+    
+    // Проверяем существование столбца status
+    const [columns] = await pool.query(`
+      SELECT COLUMN_NAME 
+      FROM INFORMATION_SCHEMA.COLUMNS 
+      WHERE TABLE_NAME = 'requests' 
+      AND COLUMN_NAME = 'status'
+    `);
+    
+    const hasStatusColumn = columns.length > 0;
+    
+    let query;
+    if (hasStatusColumn) {
+      query = `
+        SELECT 
+          COALESCE(SUM(status = 'new'), 0) AS new,
+          COALESCE(SUM(status = 'in_progress'), 0) AS in_progress,
+          COALESCE(SUM(status = 'completed'), 0) AS completed,
+          COUNT(*) AS total
+        FROM requests
       `;
-      
-      const params = [];
-      
-      if (user_id) {
-          query += ' WHERE user_id = ?';
-          params.push(user_id);
-      }
-      
-      const [rows] = await pool.query(query, params);
-      
-      // Гарантируем возврат всех полей даже при ошибках
-      const result = rows[0] || {
-          new: 0,
-          in_progress: 0,
-          completed: 0,
-          total: 0
-      };
-      
-      res.json(result);
-      
+    } else {
+      query = `
+        SELECT 
+          0 AS new,
+          0 AS in_progress,
+          0 AS completed,
+          COUNT(*) AS total
+        FROM requests
+      `;
+    }
+    
+    const params = [];
+    
+    if (user_id) {
+      query += ' WHERE user_id = ?';
+      params.push(user_id);
+    }
+    
+    const [rows] = await pool.query(query, params);
+    res.json(rows[0] || { new: 0, in_progress: 0, completed: 0, total: 0 });
   } catch (err) {
-      console.error('Stats error:', err);
-      
-      // Возвращаем нулевые значения при ошибке
-      res.json({
-          new: 0,
-          in_progress: 0,
-          completed: 0,
-          total: 0
-      });
+    console.error('Stats error:', err);
+    res.json({ new: 0, in_progress: 0, completed: 0, total: 0 });
   }
 });
 
