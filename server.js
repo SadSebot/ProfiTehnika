@@ -15,131 +15,143 @@ const dbConfig = {
   connectionLimit: 10,
   queueLimit: 0
 };
-app.use((req, res, next) => {
-  if (req.method === 'OPTIONS') {
-      return res.status(200).end();
-  }
-  next();
-});
+
 // Telegram Bot Token
 const TELEGRAM_BOT_TOKEN = 'AAGZ1JrO1lUZCWI6DV88Qx5szzpIWsfOZtc';
 
 // Разрешенные домены
 const allowedOrigins = [
-  'https://sadsebot.github.io/ProfiTehnikaMiniApp/', // Ваш домен Telegram WebApp
-  'http://localhost:4200', // Для разработки
-  'http://localhost:3000/api/requests',
-  'http://localhost:3000/api/requests/search',
-  'http://localhost:3000/api/requests/stats'
+  'https://sadsebot.github.io',
+  'https://sadsebot.github.io/ProfiTehnikaMiniApp/',
+  'http://localhost:4200'
 ];
 
 // Настройка CORS
 const corsOptions = {
   origin: function (origin, callback) {
-      const allowedOrigins = [
-          'https://sadsebot.github.io/ProfiTehnikaMiniApp/',
-          'http://localhost:4200' // Для разработки
-      ];
-      
-      if (!origin || allowedOrigins.includes(origin)) {
-          callback(null, true);
-      } else {
-          callback(new Error('Not allowed by CORS'));
-      }
+    if (!origin && process.env.NODE_ENV !== 'production') {
+      return callback(null, true);
+    }
+
+    if (allowedOrigins.some(allowed => origin && origin.startsWith(allowed))) {
+      return callback(null, true);
+    }
+
+    callback(new Error('Not allowed by CORS'));
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Telegram-Init-Data'],
-  credentials: true
+  credentials: true,
+  optionsSuccessStatus: 200
 };
 
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions)); // Для preflight запросов
+app.options('*', cors(corsOptions));
 app.use(express.json());
 
-// Создаем пул соединений
+// Пул соединений с БД
 const pool = mysql.createPool(dbConfig);
 
-// Middleware для проверки Telegram WebApp данных
+// Проверка данных Telegram WebApp
+function verifyTelegramInitData(initData, botToken) {
+  const params = new URLSearchParams(initData);
+  const hash = params.get('hash');
+  params.delete('hash');
+  
+  const dataToCheck = Array.from(params.entries())
+    .map(([key, value]) => `${key}=${value}`)
+    .sort()
+    .join('\n');
+  
+  const secretKey = crypto.createHmac('sha256', 'WebAppData')
+    .update(botToken)
+    .digest();
+  
+  return crypto
+    .createHmac('sha256', secretKey)
+    .update(dataToCheck)
+    .digest('hex') === hash;
+}
+
+// Middleware аутентификации
 function authenticateTelegramRequest(req, res, next) {
   try {
     const initData = req.headers['telegram-init-data'];
     
-    // Для тестирования можно временно отключить проверку
-    if (process.env.NODE_ENV === 'development' && !initData) {
-      console.warn('Внимание: проверка Telegram данных отключена в development');
+    if (process.env.NODE_ENV !== 'production' && !initData) {
+      console.warn('Development mode: Telegram auth skipped');
       return next();
     }
     
     if (!initData) {
-      return res.status(401).json({ error: 'Telegram init data missing' });
+      return res.status(401).json({ 
+        error: 'Telegram authentication required',
+        details: 'Missing Telegram-Init-Data header'
+      });
     }
     
-    const params = new URLSearchParams(initData);
-    const hash = params.get('hash');
-    params.delete('hash');
-    
-    const dataToCheck = Array.from(params.entries())
-      .map(([key, value]) => `${key}=${value}`)
-      .sort()
-      .join('\n');
-    
-    const secretKey = crypto.createHmac('sha256', 'WebAppData')
-      .update(TELEGRAM_BOT_TOKEN)
-      .digest();
-    
-    const calculatedHash = crypto
-      .createHmac('sha256', secretKey)
-      .update(dataToCheck)
-      .digest('hex');
-      
-    if (calculatedHash !== hash) {
-      return res.status(401).json({ error: 'Invalid Telegram hash' });
+    if (!verifyTelegramInitData(initData, TELEGRAM_BOT_TOKEN)) {
+      return res.status(401).json({ 
+        error: 'Invalid Telegram authentication',
+        details: 'Hash verification failed'
+      });
     }
     
     next();
   } catch (err) {
     console.error('Telegram auth error:', err);
-    res.status(500).json({ error: 'Authentication error' });
+    res.status(500).json({ 
+      error: 'Authentication failed',
+      details: err.message
+    });
   }
 }
 
-// API для получения заявок
+// API Endpoints
+
+// Получение заявок
 app.get('/api/requests', authenticateTelegramRequest, async (req, res) => {
   try {
-      const { status, user_id } = req.query;
-      let query = 'SELECT * FROM requests';
-      const params = [];
+    const { status, user_id } = req.query;
+    let query = 'SELECT * FROM requests';
+    const params = [];
+    const conditions = [];
     
     if (user_id) {
-      query += ' WHERE user_id = ?';
+      conditions.push('user_id = ?');
       params.push(user_id);
-      
-      if (status && status !== 'all') {
-        query += ' AND status = ?';
-        params.push(status);
-      }
-    } else if (status && status !== 'all') {
-      query += ' WHERE status = ?';
+    }
+    
+    if (status && status !== 'all') {
+      conditions.push('status = ?');
       params.push(status);
+    }
+    
+    if (conditions.length) {
+      query += ' WHERE ' + conditions.join(' AND ');
     }
     
     query += ' ORDER BY created_at DESC';
     
     const [rows] = await pool.query(query, params);
-        res.json(rows);
-    } catch (err) {
-        console.error('DB Error:', err);
-        res.status(500).json({ 
-            error: 'Database error',
-            message: err.message // Отправляем понятное сообщение
-        });
-    }
+    res.json(rows);
+  } catch (err) {
+    console.error('Database error:', err);
+    res.status(500).json({ 
+      error: 'Database operation failed',
+      details: process.env.NODE_ENV === 'production' ? undefined : err.message
+    });
+  }
 });
 
 // Поиск заявок
 app.get('/api/requests/search', authenticateTelegramRequest, async (req, res) => {
   try {
     const { query, user_id } = req.query;
+    
+    if (!query || query.length < 2) {
+      return res.status(400).json({ error: 'Search query too short' });
+    }
     
     let sql = `SELECT * FROM requests WHERE 
       (name LIKE ? OR phone LIKE ? OR message LIKE ?)`;
@@ -157,17 +169,24 @@ app.get('/api/requests/search', authenticateTelegramRequest, async (req, res) =>
     res.json(rows);
   } catch (err) {
     console.error('Search error:', err);
-    res.status(500).json({ error: 'Search failed' });
+    res.status(500).json({ 
+      error: 'Search operation failed',
+      details: process.env.NODE_ENV === 'production' ? undefined : err.message
+    });
   }
 });
 
-// Обновление статуса заявки
+// Обновление статуса
 app.put('/api/requests/:id', authenticateTelegramRequest, async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
     
-    await pool.query(
+    if (!['new', 'in_progress', 'completed'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status value' });
+    }
+    
+    const [result] = await pool.query(
       'UPDATE requests SET status = ? WHERE id = ?',
       [status, id]
     );
@@ -175,11 +194,14 @@ app.put('/api/requests/:id', authenticateTelegramRequest, async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     console.error('Update error:', err);
-    res.status(500).json({ error: 'Update failed' });
+    res.status(500).json({ 
+      error: 'Update operation failed',
+      details: process.env.NODE_ENV === 'production' ? undefined : err.message
+    });
   }
 });
 
-// Получение статистики
+// Статистика
 app.get('/api/requests/stats', authenticateTelegramRequest, async (req, res) => {
   try {
     const { user_id } = req.query;
@@ -201,38 +223,34 @@ app.get('/api/requests/stats', authenticateTelegramRequest, async (req, res) => 
     res.json(rows[0]);
   } catch (err) {
     console.error('Stats error:', err);
-    res.status(500).json({ error: 'Stats failed' });
+    res.status(500).json({ 
+      error: 'Statistics operation failed',
+      details: process.env.NODE_ENV === 'production' ? undefined : err.message
+    });
   }
 });
 
-// Проверка работоспособности API
+// Health check (упрощенная версия)
 app.get('/api/health', async (req, res) => {
   try {
-      const [rows] = await pool.query('SELECT 1 AS status');
-      res.json({
-          status: 'healthy',
-          timestamp: new Date().toISOString()
-      });
+    await pool.query('SELECT 1');
+    res.json({ status: 'healthy' });
   } catch (err) {
-      res.status(500).json({
-          status: 'unhealthy',
-          error: err.message
-      });
+    res.status(500).json({ status: 'unhealthy' });
   }
 });
 
-// Обработка несуществующих маршрутов
+// Обработка 404
 app.use((req, res) => {
   res.status(404).json({ 
-    error: 'Маршрут не найден',
+    error: 'Endpoint not found',
     path: req.path,
     method: req.method
   });
 });
 
-// Инициализация сервера
+// Запуск сервера
 const PORT = 3000;
 app.listen(PORT, () => {
-  console.log(`Сервер запущен на порту ${PORT}`);
-  console.log(`Разрешенные домены: ${allowedOrigins.join(', ')}`);
+  console.log(`Server running on port ${PORT}`);
 });
