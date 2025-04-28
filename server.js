@@ -5,6 +5,9 @@ const crypto = require('crypto');
 
 const app = express();
 
+// Конфигурация
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+
 // Конфигурация базы данных
 const dbConfig = {
   host: 'localhost',
@@ -17,19 +20,23 @@ const dbConfig = {
 };
 
 // Telegram Bot Token
-const TELEGRAM_BOT_TOKEN = 'AAGZ1JrO1lUZCWI6DV88Qx5szzpIWsfOZtc';
+const TELEGRAM_BOT_TOKEN = IS_PRODUCTION
+  ? 'AAGZ1JrO1lUZCWI6DV88Qx5szzpIWsfOZtc' // Продакшен токен
+  : 'DEV_BOT_TOKEN'; // Токен для разработки
 
 // Разрешенные домены
 const allowedOrigins = [
   'https://sadsebot.github.io',
   'https://sadsebot.github.io/ProfiTehnikaMiniApp/',
-  'http://localhost:4200'
+  'http://localhost:4200',
+  'https://web.telegram.org'
 ];
 
 // Настройка CORS
 const corsOptions = {
   origin: function (origin, callback) {
-    if (!origin && process.env.NODE_ENV !== 'production') {
+    // В режиме разработки разрешаем все запросы без origin
+    if (!IS_PRODUCTION && !origin) {
       return callback(null, true);
     }
 
@@ -52,58 +59,74 @@ app.use(express.json());
 // Пул соединений с БД
 const pool = mysql.createPool(dbConfig);
 
-// Проверка данных Telegram WebApp
-function verifyTelegramInitData(initData, botToken) {
-  const params = new URLSearchParams(initData);
-  const hash = params.get('hash');
-  params.delete('hash');
-  
-  const dataToCheck = Array.from(params.entries())
-    .map(([key, value]) => `${key}=${value}`)
-    .sort()
-    .join('\n');
-  
-  const secretKey = crypto.createHmac('sha256', 'WebAppData')
-    .update(botToken)
-    .digest();
-  
-  return crypto
-    .createHmac('sha256', secretKey)
-    .update(dataToCheck)
-    .digest('hex') === hash;
-}
-
-// Middleware аутентификации
+// Middleware аутентификации Telegram
 function authenticateTelegramRequest(req, res, next) {
+  console.log('Headers:', req.headers);
+  console.log('InitData:', req.headers['telegram-init-data']);
+  if (req.path === '/api/health') return next();
+
+  const initData = req.headers['telegram-init-data'];
+
+  // В режиме разработки используем mock-аутентификацию
+  if (!IS_PRODUCTION) {
+    console.warn('Development mode: Using mock Telegram authentication');
+    req.user = { id: 123456789 }; // Mock user data
+    return next();
+  }
+
+  // В продакшене обязательная проверка
+  if (!initData) {
+    return res.status(401).json({ 
+      error: 'Требуется аутентификация Telegram',
+      details: 'Missing Telegram-Init-Data header'
+    });
+  }
+
   try {
-    const initData = req.headers['telegram-init-data'];
-    
-    if (process.env.NODE_ENV !== 'production' && !initData) {
-      console.warn('Development mode: Telegram auth skipped');
-      return next();
-    }
-    
-    if (!initData) {
-      return res.status(401).json({ 
-        error: 'Telegram authentication required',
-        details: 'Missing Telegram-Init-Data header'
-      });
-    }
-    
-    if (!verifyTelegramInitData(initData, TELEGRAM_BOT_TOKEN)) {
-      return res.status(401).json({ 
-        error: 'Invalid Telegram authentication',
+    // Проверка подписи Telegram
+    const isValid = verifyTelegramInitData(initData, TELEGRAM_BOT_TOKEN);
+    if (!isValid) {
+      return res.status(403).json({ 
+        error: 'Неверная подпись Telegram',
         details: 'Hash verification failed'
       });
     }
-    
+
     next();
   } catch (err) {
-    console.error('Telegram auth error:', err);
+    console.error('Ошибка аутентификации:', err);
     res.status(500).json({ 
-      error: 'Authentication failed',
+      error: 'Ошибка проверки аутентификации',
       details: err.message
     });
+  }
+}
+
+// Функция проверки подписи Telegram
+function verifyTelegramInitData(initData, botToken) {
+  try {
+    const params = new URLSearchParams(initData);
+    const hash = params.get('hash');
+    params.delete('hash');
+
+    const dataToCheck = [...params.entries()]
+      .map(([key, value]) => `${key}=${value}`)
+      .sort()
+      .join('\n');
+
+    const secretKey = crypto.createHmac('sha256', 'WebAppData')
+      .update(botToken)
+      .digest();
+
+    const calculatedHash = crypto
+      .createHmac('sha256', secretKey)
+      .update(dataToCheck)
+      .digest('hex');
+
+    return calculatedHash === hash;
+  } catch (e) {
+    console.error('Verify error:', e);
+    return false;
   }
 }
 
@@ -129,7 +152,7 @@ app.get('/api/requests', authenticateTelegramRequest, async (req, res) => {
     const conditions = [];
     
     if (user_id) {
-      conditions.push('user_id = ?');
+      conditions.push('id = ?');
       params.push(user_id);
     }
     
@@ -151,7 +174,7 @@ app.get('/api/requests', authenticateTelegramRequest, async (req, res) => {
     console.error('Database error:', err);
     res.status(500).json({ 
       error: 'Database operation failed',
-      details: process.env.NODE_ENV === 'production' ? undefined : err.message
+      details: !IS_PRODUCTION ? err.message : undefined
     });
   }
 });
@@ -171,7 +194,7 @@ app.get('/api/requests/search', authenticateTelegramRequest, async (req, res) =>
     const searchParams = [`%${query}%`, `%${query}%`, `%${query}%`];
     
     if (user_id) {
-      sql += ' AND user_id = ?';
+      sql += ' AND id = ?';
       searchParams.push(user_id);
     }
     
@@ -183,7 +206,7 @@ app.get('/api/requests/search', authenticateTelegramRequest, async (req, res) =>
     console.error('Search error:', err);
     res.status(500).json({ 
       error: 'Search operation failed',
-      details: process.env.NODE_ENV === 'production' ? undefined : err.message
+      details: !IS_PRODUCTION ? err.message : undefined
     });
   }
 });
@@ -208,7 +231,7 @@ app.put('/api/requests/:id', authenticateTelegramRequest, async (req, res) => {
     console.error('Update error:', err);
     res.status(500).json({ 
       error: 'Update operation failed',
-      details: process.env.NODE_ENV === 'production' ? undefined : err.message
+      details: !IS_PRODUCTION ? err.message : undefined
     });
   }
 });
@@ -252,7 +275,7 @@ app.get('/api/requests/stats', authenticateTelegramRequest, async (req, res) => 
     const params = [];
     
     if (user_id) {
-      query += ' WHERE user_id = ?';
+      query += ' WHERE id = ?';
       params.push(user_id);
     }
     
@@ -264,7 +287,7 @@ app.get('/api/requests/stats', authenticateTelegramRequest, async (req, res) => 
   }
 });
 
-// Health check (упрощенная версия)
+// Health check
 app.get('/api/health', async (req, res) => {
   try {
     await pool.query('SELECT 1');
@@ -284,7 +307,9 @@ app.use((req, res) => {
 });
 
 // Запуск сервера
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Сервер запущен в ${IS_PRODUCTION ? 'production' : 'development'} режиме`);
+  console.log(`Порт: ${PORT}`);
+  console.log(`Telegram auth: ${IS_PRODUCTION ? 'Включена' : 'Только mock'}`);
 });
