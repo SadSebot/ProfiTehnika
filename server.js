@@ -27,9 +27,8 @@ const TELEGRAM_BOT_TOKEN = IS_PRODUCTION
 // Разрешенные домены
 const allowedOrigins = [
   'https://sadsebot.github.io',
-  'https://sadsebot.github.io/ProfiTehnikaMiniApp/',
-  'http://localhost:4200',
-  'https://web.telegram.org'
+  'https://web.telegram.org',
+  'http://localhost:4200'
 ];
 
 // Настройка CORS
@@ -57,21 +56,40 @@ app.options('*', cors(corsOptions));
 app.use(express.json());
 
 // Пул соединений с БД
-const pool = mysql.createPool(dbConfig);
+const pool = mysql.createPool({
+  ...dbConfig,
+  waitForConnections: true,
+  connectionLimit: 10,
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 0,
+  debug: !IS_PRODUCTION // Включаем логирование запросов в development
+});
 
 // Middleware аутентификации Telegram
 function authenticateTelegramRequest(req, res, next) {
-  console.log('Headers:', req.headers);
-  console.log('InitData:', req.headers['telegram-init-data']);
+  console.log('Received headers:', req.headers);
+  
+  // Пропускаем проверку для health check
   if (req.path === '/api/health') return next();
 
   const initData = req.headers['telegram-init-data'];
-
-  // В режиме разработки используем mock-аутентификацию
+  
   if (!IS_PRODUCTION) {
-    console.warn('Development mode: Using mock Telegram authentication');
-    req.user = { id: 123456789 }; // Mock user data
-    return next();
+    console.log('Development mode: Processing initData anyway');
+    try {
+      if (initData) {
+        const params = new URLSearchParams(initData);
+        const user = JSON.parse(params.get('user'));
+        req.user = user;
+        console.log('Authenticated user (dev):', user);
+      } else {
+        req.user = { id: 123456789 }; // Fallback mock user
+      }
+      return next();
+    } catch (e) {
+      console.error('Error parsing initData:', e);
+      return next();
+    }
   }
 
   // В продакшене обязательная проверка
@@ -135,46 +153,41 @@ function verifyTelegramInitData(initData, botToken) {
 // Получение заявок
 app.get('/api/requests', authenticateTelegramRequest, async (req, res) => {
   try {
+    console.log('User making request:', req.user);
+    
     const { status, user_id } = req.query;
-    
-    // Проверяем существование столбца status
-    const [columns] = await pool.query(`
-      SELECT COLUMN_NAME 
-      FROM INFORMATION_SCHEMA.COLUMNS 
-      WHERE TABLE_NAME = 'requests' 
-      AND COLUMN_NAME = 'status'
-    `);
-    
-    const hasStatusColumn = columns.length > 0;
+    const userId = user_id || req.user?.id;
     
     let query = 'SELECT * FROM requests';
     const params = [];
-    const conditions = [];
     
-    if (user_id) {
-      conditions.push('id = ?');
-      params.push(user_id);
+    if (userId) {
+      query += ' WHERE user_id = ?';
+      params.push(userId);
     }
     
-    // Добавляем условие по статусу только если столбец существует
-    if (hasStatusColumn && status && status !== 'all') {
-      conditions.push('status = ?');
+    if (status && status !== 'all') {
+      query += userId ? ' AND' : ' WHERE';
+      query += ' status = ?';
       params.push(status);
-    }
-    
-    if (conditions.length) {
-      query += ' WHERE ' + conditions.join(' AND ');
     }
     
     query += ' ORDER BY created_at DESC';
     
+    console.log('Executing query:', query, 'with params:', params);
+    
     const [rows] = await pool.query(query, params);
+    
+    if (!rows.length) {
+      console.log('No requests found for query');
+    }
+    
     res.json(rows);
-  } catch (err) {
-    console.error('Database error:', err);
+  } catch (error) {
+    console.error('Database error:', error);
     res.status(500).json({ 
       error: 'Database operation failed',
-      details: !IS_PRODUCTION ? err.message : undefined
+      details: IS_PRODUCTION ? undefined : error.message
     });
   }
 });
@@ -296,7 +309,16 @@ app.get('/api/health', async (req, res) => {
     res.status(500).json({ status: 'unhealthy' });
   }
 });
-
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Telegram-Init-Data');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  next();
+});
 // Обработка 404
 app.use((req, res) => {
   res.status(404).json({ 
