@@ -296,7 +296,16 @@ app.get('/api/health', async (req, res) => {
     res.status(500).json({ status: 'unhealthy' });
   }
 });
-
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  }
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Telegram-Init-Data');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  next();
+});
 // Обработка 404
 app.use((req, res) => {
   res.status(404).json({ 
